@@ -23,10 +23,10 @@ jobs:
         run: |
           $flagFile = "$env:USERPROFILE\.mattermost_migration_completed"
           if (Test-Path $flagFile) {
-            Write-Host "✅ Database already migrated to PostgreSQL. Skipping data transfer."
+            Write-Host " Database already migrated to PostgreSQL. Skipping data transfer."
             "already_migrated=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           } else {
-            Write-Host "⚠️ Migration required."
+            Write-Host " Migration required."
             "already_migrated=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           }
 
@@ -34,14 +34,14 @@ jobs:
       - name: Backup Legacy MySQL
         if: steps.check_status.outputs.already_migrated == 'false'
         run: |
-          Write-Host "📦 Creating timestamped backup of MySQL..."
+          Write-Host " Creating timestamped backup of MySQL..."
           $backupName = "mattermost_mysql_backup_${{ github.run_id }}.sql"
           $running = docker ps --format "{{.Names}}" | Select-String -Pattern "^mattermost-mysql$"
           if ($running) {
             docker exec -e MYSQL_PWD="${{ secrets.DB_MYSQL_ROOT_PASSWORD }}" mattermost-mysql mysqldump -u root mattermost | Out-File -FilePath $backupName -Encoding utf8
-            Write-Host "✅ Backup successfully saved as $backupName"
+            Write-Host " Backup successfully saved as $backupName"
           } else {
-            Write-Host "❌ Error: Legacy MySQL container is not running!"
+            Write-Host " Error: Legacy MySQL container is not running!"
             exit 1
           }
 
@@ -50,14 +50,14 @@ jobs:
         if: steps.check_status.outputs.already_migrated == 'false'
         run: |
           docker compose -f $env:COMPOSE_FILE up -d db-postgres
-          Write-Host "⏳ Waiting for PostgreSQL to initialize..."
+          Write-Host " Waiting for PostgreSQL to initialize..."
           Start-Sleep -Seconds 10
 
       # 4. Миграция данных через pgloader
       - name: Run pgloader (With Schema Drop for Idempotency)
         if: steps.check_status.outputs.already_migrated == 'false'
         run: |
-          Write-Host "🔄 Migrating schema and data from MySQL to PostgreSQL..."
+          Write-Host " Migrating schema and data from MySQL to PostgreSQL..."
           docker run --rm --network=legacy_mattermost_network mattermost/mattermost-pgloader:latest pgloader `
             --with "include drop" `
             "mysql://root:${{ secrets.DB_MYSQL_ROOT_PASSWORD }}@mattermost-mysql/mattermost" `
@@ -71,26 +71,26 @@ jobs:
       # 6. Развертывание нового стека
       - name: Deploy Upgraded Stack
         run: |
-          Write-Host "🚀 Launching Upgraded Mattermost Stack..."
+          Write-Host " Launching Upgraded Mattermost Stack..."
           docker stop mattermost 2>$null
           docker rm mattermost 2>$null
           docker compose -f $env:COMPOSE_FILE up -d --build --remove-orphans
-          Write-Host "⏳ Waiting for Mattermost to apply internal database updates..."
+          Write-Host " Waiting for Mattermost to apply internal database updates..."
           Start-Sleep -Seconds 30
 
       # 7. Проверка работоспособности
       - name: Run Health Checks & Verify Data
         run: |
-          Write-Host "🧪 Running Smoke Tests..."
+          Write-Host " Running Smoke Tests..."
           try {
             $response = Invoke-WebRequest -Uri "http://localhost:8065/api/v4/system/ping" -UseBasicParsing
             if ($response.StatusCode -eq 200) {
-              Write-Host "✅ Mattermost upgraded successfully and running on Postgres!"
+              Write-Host " Mattermost upgraded successfully and running on Postgres!"
             } else {
               throw "Status code: $($response.StatusCode)"
             }
           } catch {
-            Write-Host "❌ Application health check failed. Fetching logs..."
+            Write-Host " Application health check failed. Fetching logs..."
             docker compose -f $env:COMPOSE_FILE logs
             exit 1
           }
